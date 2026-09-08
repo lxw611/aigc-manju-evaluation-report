@@ -57,6 +57,7 @@
   .btn{background:var(--blue);color:#fff;border:0;border-radius:6px;padding:8px 14px;font-size:14px;cursor:pointer;}
   .btn.sec{background:#e9edf4;color:var(--ink);}
   .actions{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0;}
+  .save-note{align-self:center;font-size:12px;color:var(--sub);background:#eef3ff;border-radius:5px;padding:5px 9px;}
   .result{background:#eef4ff;border:1px solid #cbdaff;border-radius:8px;padding:16px 18px;margin:12px 0;}
   .scorebar{height:8px;border-radius:4px;background:#e6e8ec;overflow:hidden;margin:5px 0;}
   .scorebar i{display:block;height:100%;background:var(--blue);}
@@ -328,7 +329,11 @@ const RESEARCH = {
 };
 
 const STORAGE_KEY = "aigc-manju-five-stage-route-v1";
-let state = importedState();
+const TEXT_KEY = "aigc-manju-output-text-v1";
+const MEDIA_KEY = "aigc-manju-output-media-v1";
+const MEDIA_DB = "aigc-manju-output-assets-v1";
+let mediaDB = null;
+let state = Object.assign({}, importedState(), loadState());
 const app = document.getElementById("app");
 
 function importedState(){
@@ -362,6 +367,138 @@ function saveState(){
 function loadState(){
   try{const raw=localStorage.getItem(STORAGE_KEY);if(raw)return JSON.parse(raw);}catch(e){}
   return {};
+}
+function readJson(key,fallback){
+  try{const raw=localStorage.getItem(key);if(raw)return JSON.parse(raw);}catch(e){}
+  return fallback;
+}
+function writeJson(key,value){
+  try{localStorage.setItem(key,JSON.stringify(value));}catch(e){}
+}
+function getSavedText(id){
+  const map=readJson(TEXT_KEY,{});
+  return map[id]||"";
+}
+function setSavedText(id,text){
+  const map=readJson(TEXT_KEY,{});
+  map[id]=text;
+  writeJson(TEXT_KEY,map);
+  showSaveNote(text?"素材文字已自动保存":"素材文字已清除");
+}
+function getMediaManifest(){
+  return readJson(MEDIA_KEY,{});
+}
+function setMediaManifest(id,file){
+  const map=getMediaManifest();
+  map[id]={name:file.name||"",type:file.type||"",size:file.size||0,time:Date.now()};
+  writeJson(MEDIA_KEY,map);
+}
+function idbOpen(){
+  return new Promise((resolve,reject)=>{
+    if(mediaDB){resolve(mediaDB);return;}
+    if(!window.indexedDB){reject(new Error("IndexedDB unavailable"));return;}
+    const req=indexedDB.open(MEDIA_DB,1);
+    req.onupgradeneeded=()=>{
+      if(!req.result.objectStoreNames.contains("assets")){
+        req.result.createObjectStore("assets");
+      }
+    };
+    req.onsuccess=()=>{
+      mediaDB=req.result;
+      mediaDB.onerror=()=>{};
+      resolve(mediaDB);
+    };
+    req.onerror=()=>reject(req.error);
+  });
+}
+async function idbPut(id,file){
+  const db=await idbOpen();
+  await new Promise((resolve,reject)=>{
+    const tx=db.transaction("assets","readwrite");
+    tx.objectStore("assets").put(file,id);
+    tx.oncomplete=resolve;
+    tx.onerror=()=>reject(tx.error);
+    tx.onabort=()=>reject(tx.error);
+  });
+}
+async function idbGet(id){
+  const db=await idbOpen();
+  return new Promise((resolve,reject)=>{
+    const tx=db.transaction("assets","readonly");
+    const req=tx.objectStore("assets").get(id);
+    req.onsuccess=()=>resolve(req.result||null);
+    req.onerror=()=>reject(req.error);
+  });
+}
+async function idbDelete(id){
+  const db=await idbOpen();
+  await new Promise((resolve,reject)=>{
+    const tx=db.transaction("assets","readwrite");
+    tx.objectStore("assets").delete(id);
+    tx.oncomplete=resolve;
+    tx.onerror=()=>reject(tx.error);
+  });
+}
+function renderBlob(out,file,stage){
+  const url=URL.createObjectURL(file);
+  out.innerHTML=stageById(stage)?.kind==="video"
+    ? `<video controls src="${url}"></video>`
+    : `<img src="${url}" alt="已保存素材预览">`;
+}
+async function saveOutputMedia(id,file,stage){
+  await idbPut(id,file);
+  setMediaManifest(id,file);
+  const out=document.getElementById(id);
+  if(out)renderBlob(out,file,stage);
+  showSaveNote("素材已保存，刷新页面后仍会保留");
+}
+async function restoreOutputMedia(){
+  const manifest=getMediaManifest();
+  for(const id of Object.keys(manifest)){
+    const file=await idbGet(id).catch(()=>null);
+    const out=document.getElementById(id);
+    if(!file||!out)continue;
+    const key=id.startsWith("out-")?id.slice(4):"";
+    const split=key.indexOf("-");
+    const stage=key.slice(0,split);
+    renderBlob(out,file,stage);
+  }
+}
+function restoreOutputTexts(){
+  const map=readJson(TEXT_KEY,{});
+  document.querySelectorAll("textarea.script-area").forEach(ta=>{
+    if(map[ta.id])ta.value=map[ta.id];
+  });
+}
+async function restoreOutputs(){
+  restoreOutputTexts();
+  await restoreOutputMedia().catch(()=>{});
+  showSaveNote("状态已恢复：素材会自动保存在当前浏览器");
+}
+async function clearOutputState(){
+  const keep=confirm("确定清除本页面已保存的素材和文字吗？评分可单独用“清空重填”清除。");
+  if(!keep)return;
+  localStorage.removeItem(TEXT_KEY);
+  const manifest=getMediaManifest();
+  for(const id of Object.keys(manifest)){
+    await idbDelete(id).catch(()=>{});
+  }
+  localStorage.removeItem(MEDIA_KEY);
+  document.querySelectorAll("textarea.script-area").forEach(ta=>ta.value="");
+  document.querySelectorAll(".media-frame").forEach(frame=>{
+    frame.innerHTML='<div>素材已清除，可重新选择文件</div>';
+  });
+  showSaveNote("已清除已保存素材");
+}
+function showSaveNote(msg){
+  const el=document.getElementById("save-note");
+  if(!el)return;
+  el.textContent=msg;
+  clearTimeout(showSaveNote._t);
+  showSaveNote._t=setTimeout(()=>{
+    const cur=document.getElementById("save-note");
+    if(cur)cur.textContent="素材状态：自动保存已开启";
+  },2500);
 }
 function clearState(){
   state={};
@@ -580,6 +717,8 @@ function render(){
       <button class="btn" onclick="renderResult()">计算路由排名</button>
       <button class="btn sec" onclick="copyState()">复制本轮勾选 JSON</button>
       <button class="btn sec" onclick="clearState()">清空重填</button>
+      <button class="btn sec" onclick="clearOutputState()">清除已存素材</button>
+      <span class="save-note" id="save-note">素材状态：自动保存已开启</span>
     </div>
     ${stageTables}
 
@@ -731,12 +870,16 @@ document.addEventListener("change",async e=>{
     if(!out||!st)return;
     const modelName=st.models.find(x=>x.id===model)?.name||model;
     if(st.kind==="text"){
-      out.value=await file.text();
+      const text=await file.text();
+      out.value=text;
+      setSavedText(out.id,text);
     }else{
-      const url=URL.createObjectURL(file);
-      out.innerHTML=st.kind==="video"
-        ? `<video controls src="${url}"></video>`
-        : `<img src="${url}" alt="${esc(modelName)} 预览">`;
+      try{
+        await saveOutputMedia(out.id,file,stage);
+      }catch(err){
+        alert("素材较大或浏览器未允许本地存储，未能自动保存。");
+        renderBlob(out,file,stage);
+      }
     }
     return;
   }
@@ -745,9 +888,15 @@ document.addEventListener("change",async e=>{
     updateScores();
   }
 });
+document.addEventListener("input",e=>{
+  if(e.target.tagName==="TEXTAREA"&&e.target.classList.contains("script-area")){
+    setSavedText(e.target.id,e.target.value);
+  }
+});
 
 render();
 renderResult();
+restoreOutputs();
 </script>
 </body>
 </html>
