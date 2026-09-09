@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI 漫剧模型评测工作流设计报告</title>
+<style>
+  :root{
+    --bg:#f5f7fb;--card:#fff;--ink:#20242c;--sub:#616a78;--line:#dfe3ea;
+    --blue:#2457e6;--green:#168a5a;--amber:#c46b0c;--red:#c93a3a;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    line-height:1.72;font-size:15px;}
+  .wrap{max-width:1120px;margin:0 auto;padding:28px 18px 80px;}
+  header{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:20px 24px 16px;}
+  h1{font-size:26px;margin:0 0 8px;line-height:1.35;}
+  .meta{color:var(--sub);font-size:13px;}
+  h2{font-size:20px;margin:38px 0 12px;padding-left:11px;border-left:4px solid var(--blue);}
+  h3{font-size:16px;margin:12px 0 7px;}
+  p{margin:8px 0;}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:16px 20px;margin:14px 0;}
+  .lead{background:#eef4ff;border-color:#cbdaff;}
+  .notice{background:#f8fafc;border-color:#e5e9ef;}
+  .warn{background:#fff6e8;border-color:#f0d9ad;}
+  .mini{font-size:12.5px;color:var(--sub);}
+  .toc{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:11px 16px;margin:14px 0;font-size:13.5px;}
+  .toc a{color:var(--blue);text-decoration:none;margin-right:16px;white-space:nowrap;}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:12px 0;}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  .flow-card{border:1px solid var(--line);border-radius:8px;background:#fcfcfd;padding:14px 15px;min-height:125px;}
+  .flow-card b{color:var(--blue);}
+  .num{display:inline-block;width:25px;height:25px;border-radius:6px;background:var(--blue);color:#fff;text-align:center;line-height:25px;font-size:13px;margin-right:7px;}
+  table{width:100%;border-collapse:collapse;background:#fff;font-size:13.5px;margin:12px 0;border:1px solid var(--line);}
+  th,td{padding:9px 11px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top;}
+  th{background:#eef1f6;font-weight:600;}
+  tr:last-child td{border-bottom:none;}
+  .best{color:var(--green);font-weight:700;}
+  .tag{display:inline-block;padding:2px 10px;border-radius:16px;font-size:12px;font-weight:600;color:#fff;}
+  .t-blue{background:var(--blue);}.t-green{background:var(--green);}.t-amber{background:var(--amber);}
+  footer{margin-top:40px;padding-top:15px;border-top:1px solid var(--line);color:var(--sub);font-size:12px;}
+  @media(max-width:860px){.grid3,.grid2{grid-template-columns:1fr;}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>AI 漫剧模型评测工作流设计报告</h1>
+    <div class="meta">五环节模型路由评测 · 中外模型分池 · 2026-09-09</div>
+  </header>
+
+  <div class="card lead">
+    <h2 style="border:none;padding:0;margin:0 0 8px">结论</h2>
+    <p style="margin:0;font-size:17px"><b>把模型选型从“单点抽卡”改成“五环节受控评测”，更适合判断 AI 漫剧生产链路该用哪条模型路线。</b></p>
+    <p style="margin:10px 0 0">本项目以同一句话创意为起点，依次评测剧本、分镜、人物图、分镜画面和视频生成五个环节。每一环节使用固定公共输入、统一评分标准和并行候选模型，再把环节冠军作为下一环节的输入，最终输出一条可复用的模型路由建议。</p>
+  </div>
+
+  <div class="toc">
+    <b>目录：</b>
+    <a href="#why">为什么需要工作流</a>
+    <a href="#how">如何运行</a>
+    <a href="#models">模型分池</a>
+    <a href="#scoring">评分体系</a>
+    <a href="#route">路由与复用</a>
+  </div>
+
+  <h2 id="why">为什么需要工作流</h2>
+  <div class="card">
+    <p>AI 漫剧不是一次生成的作品，而是一条连续生产链：一个故事先被写成剧本，再由剧本拆成分镜，然后生成人物图、分镜画面，最后才变成视频。任何一个环节的输入或模型发生变化，都可能让角色长相、场景风格或剧情顺序出现偏差。</p>
+    <p>传统选型方式通常直接比较几条最终视频，但这会把提示词质量、抽卡次数、参考图质量混在一起。真正的问题不是“哪家最终效果最好”，而是“哪个模型最适合承担某一环节”。</p>
+  </div>
+  <div class="grid3">
+    <div class="card" style="margin:0"><h3>输入不同</h3><p class="mini">模型收到不同提示词时，无法判断结果是模型能力还是提示词造成的。</p></div>
+    <div class="card" style="margin:0"><h3>记忆断裂</h3><p class="mini">前一轮选出的剧本或人物图没有稳定进入下一轮，跨环节一致性难以比较。</p></div>
+    <div class="card" style="margin:0"><h3>标准主观</h3><p class="mini">只看成片观感会忽略分镜可执行性、人物一致性、成本与返工风险。</p></div>
+  </div>
+
+  <h2 id="how">如何运行</h2>
+  <div class="card">
+    <p>工作流按“固定输入、并行生成、逐项评分、冠军递进”四步运行。每个环节只保留一份公共材料，同一环节内的候选模型独立输出，最后由人工按评分表选出该环节冠军。</p>
+  </div>
+  <div class="grid3">
+    <div class="flow-card"><b><span class="num">1</span>一句话创意</b><p class="mini">国内模型接收中文，国外模型接收英文，输出统一中文整集剧本。</p></div>
+    <div class="flow-card"><b><span class="num">2</span>剧本 → 分镜</b><p class="mini">固定最优剧本，对比 6 个文本模型拆解 6-8 个镜头的能力。</p></div>
+    <div class="flow-card"><b><span class="num">3</span>人物设定图</b><p class="mini">统一人物卡输入图像模型，选择最稳定的角色参考图。</p></div>
+    <div class="flow-card"><b><span class="num">4</span>分镜画面</b><p class="mini">最优分镜 + 最优人物图生成关键画面，校验构图与一致性。</p></div>
+    <div class="flow-card"><b><span class="num">5</span>分镜视频</b><p class="mini">统一使用最优分镜画面，生成 5 秒 1:1 视频并对比动作连贯性。</p></div>
+    <div class="flow-card"><b><span class="num">6</span>路线输出</b><p class="mini">汇总各环节得分，输出最优单模型路由与完整生产链路。</p></div>
+  </div>
+
+  <h2 id="models">模型分池</h2>
+  <table>
+    <tr><th style="width:30%">环节</th><th>候选模型</th><th style="width:32%">输入与输出</th></tr>
+    <tr><td><b>一句话 → 剧本</b></td><td>DeepSeek V4 Flash、豆包2.1 Pro、MiniMax-M2.7、Claude、GPT、Gemini</td><td>国内模型中文输入；国外模型英文输入；输出中文整集剧本</td></tr>
+    <tr><td><b>剧本 → 分镜</b></td><td>同上 6 个文本模型</td><td>统一固定剧本；输出中文 6-8 个镜头分镜</td></tr>
+    <tr><td><b>文生人物图片</b></td><td>Seedream、Qwen-Image 2.0、nanobanana 2</td><td>统一人物卡；输出人物参考图</td></tr>
+    <tr><td><b>分镜+人物图 → 分镜画面</b></td><td>Qwen-Image 2.0、nanobanana 2、Seedream</td><td>最优分镜与人物图；输出关键分镜画面</td></tr>
+    <tr><td><b>分镜画面 → 视频</b></td><td>Seedance 2.0、Imagine 15、MiniMax-H3</td><td>最优分镜画面；输出 5 秒 1:1 视频</td></tr>
+  </table>
+
+  <h2 id="scoring">评分体系</h2>
+  <div class="grid2">
+    <div class="card" style="margin:0">
+      <h3>文本环节关注什么</h3>
+      <p class="mini">剧本与分镜必须能向下游传递：剧本要保留故事核心、角色动机和结尾钩子；分镜要写清景别、机位、运镜、人物动作、服装道具、转场和一致性提醒。</p>
+      <p class="mini">两项都采用“符合 1 分、部分 0.5 分、不符 0 分”，每个维度都有可操作判断标准，避免只凭总印象打分。</p>
+    </div>
+    <div class="card" style="margin:0">
+      <h3>图像与视频关注什么</h3>
+      <p class="mini">人物图关注人设还原、画风、细节和复用性；分镜画面关注还原度、质量、一致性与首帧可用性；视频关注动作物理、镜头运镜、角色一致与综合可用性。</p>
+      <p class="mini">所有模型只生成一次，不反复抽卡；同一环节必须使用同一公共输入。</p>
+    </div>
+  </div>
+
+  <div class="card warn">
+    <h3>边界用例</h3>
+    <p>审核、政治、人种/族裔、敏感话题和语言本土化会插入剧本与分镜阶段。评测不会要求模型生成违规内容，而是观察模型是否明确拒绝、安全改写或指出风险；本土化用例则看中文是否自然、是否保留原故事的双文化冲突。</p>
+  </div>
+
+  <h2 id="route">路由与复用</h2>
+  <div class="grid2">
+    <div class="card" style="margin:0">
+      <h3>输出形式</h3>
+      <p>每个环节单独给出模型排名，再把五环冠军串成一条生产路线。路线结果不是简单的“A 平台最好”，而是“剧本选谁、分镜选谁、图像选谁、视频选谁”。</p>
+      <p>线上版本会保留可勾选评分记录、素材预览、资料评分与最终路线，便于后续复核或调整权重。</p>
+    </div>
+    <div class="card" style="margin:0">
+      <h3>复用方式</h3>
+      <p>更换产品、题材或目标市场时，不需要重做工作流结构，只需替换创意素材、产品资料、提示词和模型池。</p>
+      <p>当前流程优先用人工评分保证判断一致；未来可以把清晰度、帧间连贯、角色一致性检测等客观指标作为自动预筛，再与人工评分共同呈现。</p>
+    </div>
+  </div>
+
+  <footer>
+    本文档为原创工作流设计说明 · 内容基于 AI 漫剧五环节模型评测项目 ·
+    未引用或复制他人作业文本。
+  </footer>
+</div>
+</body>
+</html>
